@@ -1,0 +1,52 @@
+Made a customization of kickstart/anaconda and I would like to share it with the rest of the anaconda community.   It's essentially a way to bypass the rpm installation during a kickstart and instead using file sets images. What differes from other tools such as system imager  is that the hardware doesn't need to be the same.
+
+Instead as during any kickstart the hardware is detected and the support (kernel etc) is installed as usual. Hence you can e.g. have the same image for a small development server as for the big production server or even snapshot the production server and deploy it on a smaller test machine to investigate bugs.
+
+Anyways let me introduce AI i.e. Anaconda Image, please let me first note that it's a work in progress and that the code is far from polished.  
+
+
+AI – Anaconda Image;
+
+A way of rapid kickstart deployment with help of file set images on the same hardware architecture but regardless of hardware.   
+Main ideas are to;
+
+    By pass the lengthy time it takes for all rpm packages to be installed on a system
+    Be able to do customizations on the system and have them ready at install time without help of cumbersome post kickstart scripts or other scripts fetching additional configurations or packages at a post install
+    Be able to snapshot a system either as a backup or for replication and deploy that snapshot on any hardware as long as the architecture is the same 
+
+To accomplish this kickstart is preformed on the system as usual with the exception of nearly the entire rpm installation portion of kickstart. Instead just before the rpm installation is to take place a cpio archive is extracted   complete with the rpm database and all other files (packages) of the system you want to build (basically you have made compleate backup with help of cpio on a system you want to use as your golden system). After the extraction is complete the necessary rpm packages such as kernel, filesystem support packages and boot loader packages will be installed as normal during a kickstart. The system is by that time ready for use and it has the correct initrd image and kernel along with the support of the filesystem such as e.g. ext3, xfs or what ever you will use.
+
+The way to customize kickstart without hacking anaconda it self is to use the special word " %installclass" in the kickstart configuration file. This way the kickstart file is split in two parts and the latter part with you custom python code loaded. This way its relatively easy to overload and extend all functions and procedures present in anaconda.
+
+What you do is basically defining a " class CustomKickstart(KickstartBase):" in which you skip nearly all steps in a kickstart and add a few of your own namely:
+
+flashpre – preparation to flash mainly getting hw support info (pretty much a copy of existing code)
+flashinstall – extraction of the cpio archive
+flashpackage – installation of the packages needed for hardware support (also mostly a copy of anaconda code and butchered)
+flashpost – post stuff to write hw conf and similar  
+
+ 
+
+When appending the " %installclass"  a new keyword flash can be used in your kickstart config file. It takes the following arguments
+
+--server="IP ADDRESS"  which is the server from when you will NFS mount your system image
+--dir=/where/I/have/my/image/
+
+By default it will look for the directory "RedHat/4" in this dir – but if it doesn't find it will traverse up. The main server image it looks for is "default" but you can have it to look for image names based in MAC address, "desktop", "server" and so forth and so on. The comments in the code are covering those scenarios pretty extensively. And I will try to explain it further when I get the code a bit more polished.
+
+The code is however fully functional and I have used to build 66 servers with a average build time of nine minutes per server :) – that's fully configured servers with third party applications and ready for immediate use.
+
+
+
+NOTE: however that there are a few anomalies in the RedHat Advance Server Anaconda implementation.
+
+ 
+The key word " %installclass" is not really supported even if it's fully documented in the code. If you use it strait up and down hence I had to change Kickstart.c in loader2 not just look for pre post and packages in the ksReadCommands function since installclass should also taken into consideration if we do a custom kickstart installation ( i.e. we should stop parsing when we reach installclass)
+
+
+Changed kickstart.py so that it don't remove the tmp /tmp/ks.conf.new after invoking custom kick start (we will get an error since the file will not excist later on in the execution) i.e. "#os.unlink(newKsFile)" in kickstart.py
+
+I mean it's probably a good idea to keep the ksclass.py why remove something looks very meaning less to me?
+
+One strange thing is that I didn't find why we could not do ip=dhcp – there is definitely something wrong in the parser since (ip= xxxxyyyyssss.eeee,) doesn't work while ip, gateway, netmaskworks.
+ 
